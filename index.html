@@ -110,6 +110,8 @@ let reconocimiento=null, vozSolicitada=false, hablandoSistema=false, reconocimie
 let temporizadorEscucha=null, workerOCR=null, leyendoOCR=false;
 let ultimoResumen="Todavía no hay una descripción disponible.";
 let ultimoAvisoPeligro=0, ultimoResumenHablado="";
+  let ultimaUbicacionPared = "";
+let ultimoAvisoPared = 0;
 const UMBRAL_OBJETO=0.55;
 const NOMBRES={
   person:"persona",bicycle:"bicicleta",car:"auto",motorcycle:"motocicleta",bus:"autobús",
@@ -431,24 +433,62 @@ function detectarAlertaPrioritaria(posiciones){
   return `Precaución. Hay un objeto grande en la zona ${candidato.zona}: ${candidato.nombre}. No puedo medir su distancia exacta.`;
 }
 
-async function detectarEscena(){
-  const mapa=await escenaModelo.predict(video);
-  const datos=await mapa.data();
-  const shape=mapa.shape;mapa.dispose();
-  const alto=shape[0], ancho=shape[1];
-  const etiquetas=deeplab.getLabels("ade20k");
-  const conteo={};
-  const y0=Math.floor(alto*.25), y1=Math.floor(alto*.90);
-  const x0=Math.floor(ancho*.25), x1=Math.floor(ancho*.75);
-  for(let y=y0;y<y1;y+=2){
-    for(let x=x0;x<x1;x+=2){
-      const id=datos[y*ancho+x];
-      const nombre=etiquetas[id];
-      if(nombre)conteo[nombre]=(conteo[nombre]||0)+1;
+async function detectarEscena() {
+    const mapa = await escenaModelo.predict(video);
+    const datos = await mapa.data();
+    const shape = mapa.shape;
+    mapa.dispose();
+
+    const alto = shape[0];
+    const ancho = shape[1];
+    const etiquetas = deeplab.getLabels("ade20k");
+
+    const zonas = {
+        izquierda: { pared: 0, total: 0 },
+        centro: { pared: 0, total: 0 },
+        derecha: { pared: 0, total: 0 }
+    };
+
+    // Analizamos la imagen sin tomar los bordes extremos.
+    const y0 = Math.floor(alto * 0.15);
+    const y1 = Math.floor(alto * 0.90);
+
+    for (let y = y0; y < y1; y += 2) {
+        for (let x = 0; x < ancho; x += 2) {
+
+            let zona;
+
+            if (x < ancho / 3) {
+                zona = "izquierda";
+            } else if (x < ancho * 2 / 3) {
+                zona = "centro";
+            } else {
+                zona = "derecha";
+            }
+
+            const id = datos[y * ancho + x];
+            const nombre = etiquetas[id];
+
+            zonas[zona].total++;
+
+            if (nombre === "wall") {
+                zonas[zona].pared++;
+            }
+        }
     }
-  }
-  const total=Object.values(conteo).reduce((a,b)=>a+b,0)||1;
-  return Object.entries(conteo).sort((a,b)=>b[1]-a[1]).map(([nombre,n])=>({nombre,porcentaje:n/total}));
+
+    // Consideramos pared cuando ocupa al menos el 18% de una zona.
+    const resultado = [];
+
+    for (const [zona, datosZona] of Object.entries(zonas)) {
+        const porcentaje = datosZona.pared / (datosZona.total || 1);
+
+        if (porcentaje >= 0.18) {
+            resultado.push(zona);
+        }
+    }
+
+    return resultado;
 }
 function fraseEscena(lista){
   const importantes=lista.filter(x=>x.porcentaje>.08);
@@ -460,6 +500,17 @@ function fraseEscena(lista){
   if(nombres.includes("ceiling"))salida.push("techo");
   if(nombres.includes("windowpane"))salida.push("ventana");
   return salida;
+}
+  function fraseEscena(zonas) {
+    if (!zonas.length) return "";
+
+    const lugares = zonas.map(zona => {
+        if (zona === "izquierda") return "a la izquierda";
+        if (zona === "centro") return "enfrente";
+        if (zona === "derecha") return "a la derecha";
+    });
+
+    return "Identifico una pared " + lugares.join(" y ") + ".";
 }
 async function analizar(){
   if(!activo||ocupado)return;
@@ -489,23 +540,29 @@ async function analizar(){
       estado.textContent=vozSolicitada ? "Sistema activo · control por voz" : "Buscando objetos";
     }
 
-    if(Date.now()-ultimoEscena>5000){
-      ultimoEscena=Date.now();
-      const escena=await detectarEscena();
-      const elementos=fraseEscena(escena);
-      if(elementos.length){
-        const frase="También identifico "+elementos.join(", ")+".";
-        ultimoResumen += " "+frase;
-      }
+    if (Date.now() - ultimoEscena > 5000) {
+    ultimoEscena = Date.now();
+
+    const escena = await detectarEscena();
+    const frase = fraseEscena(escena);
+
+    if (frase) {
+        ultimoResumen += " " + frase;
+
+        // Evitar repetir la misma ubicación constantemente.
+        if (
+            frase !== ultimaUbicacionPared &&
+            Date.now() - ultimoAvisoPared > 10000
+        ) {
+            ultimaUbicacionPared = frase;
+            ultimoAvisoPared = Date.now();
+
+            mensaje.textContent = frase;
+            hablar(frase);
+        }
+    } else {
+        ultimaUbicacionPared = "";
     }
-  }catch(e){
-    console.error(e);
-    estado.textContent="Error en el análisis";
-    mensaje.textContent="No se pudo analizar esta imagen.";
-  }finally{
-    ocupado=false;
-    if(activo)cicloId=setTimeout(analizar,500);
-  }
 }
 async function iniciar(){
   $("iniciar").disabled=true;$("iniciar").textContent="INICIANDO...";
