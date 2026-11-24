@@ -472,25 +472,53 @@ async function analizar(){
     const descripcion=construirDescripcion(posiciones);
     ultimoResumen=descripcion;
 
-    const alerta=detectarAlertaPrioritaria(posiciones);
-    if(alerta && Date.now()-ultimoAvisoPeligro>6500){
-      ultimoAvisoPeligro=Date.now();
-      mensaje.textContent=alerta;
-      hablar(alerta,true);
-    }else if(posiciones.elementos.length){
-      mensaje.textContent=descripcion;
-      estado.textContent=vozSolicitada ? "Sistema activo · control por voz" : "Entorno analizado";
-      // Evita repetir continuamente la misma frase.
-      if(descripcion!==ultimoResumenHablado){
-        ultimoResumenHablado=descripcion;
-        hablar(descripcion);
-      }
-    }else{
-      mensaje.textContent="Analizando el entorno...";
-      estado.textContent=vozSolicitada ? "Sistema activo · control por voz" : "Buscando objetos";
-    }
+    const alerta = detectarAlertaPrioritaria(posiciones);
+const ahora = Date.now();
 
-    if(Date.now()-ultimoEscena>5000){
+if (alerta) {
+    if (alerta !== ultimaAlertaHablada) {
+        ultimaAlertaHablada = alerta;
+        mensaje.textContent = alerta;
+        hablar(alerta, true);
+    }
+} else {
+    ultimaAlertaHablada = "";
+
+    if (posiciones.elementos.length) {
+        mensaje.textContent = descripcion;
+        estado.textContent = vozSolicitada
+            ? "Sistema activo · control por voz"
+            : "Entorno analizado";
+
+        // Obtener objetos diferentes sin duplicarlos.
+        const presentes = [
+            ...new Set(posiciones.elementos.map(objeto => objeto.nombre))
+        ];
+
+        // Identificar objetos nuevos o que reaparecieron.
+        const nuevos = presentes.filter(nombre =>
+            !objetosAnunciados.has(nombre) ||
+            ahora - objetosAnunciados.get(nombre) > TIEMPO_REPETICION
+        );
+
+        // Actualizar el último momento en que se vio cada objeto.
+        presentes.forEach(nombre => {
+            objetosAnunciados.set(nombre, ahora);
+        });
+
+        // Hablar únicamente cuando aparece algo nuevo.
+        if (nuevos.length > 0) {
+            const frase = "Detecto " + nuevos.join(" y ") + ".";
+            ultimoResumenHablado = descripcion;
+            hablar(frase);
+        }
+    } else {
+        mensaje.textContent = "Analizando el entorno...";
+        estado.textContent = vozSolicitada
+            ? "Sistema activo · control por voz"
+            : "Buscando objetos";
+    }
+}
       ultimoEscena=Date.now();
       const escena=await detectarEscena();
       const elementos=fraseEscena(escena);
