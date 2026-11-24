@@ -256,7 +256,7 @@ async function iniciarEscuchaVoz(){
     }
 
     vozSolicitada=true;
-    $("activarVoz").textContent="CONTROL POR VOZ ACTIVADO";
+   
     actualizarEstadoVoz("Permiso concedido. Activando instrucciones por voz...");
     // Primero anuncia la activación y después abre el micrófono para no escucharse a sí mismo.
     hablar("Control por voz activado. Di iniciar sistema o ayuda.",true);
@@ -550,10 +550,12 @@ $("escucharIntro").addEventListener("click",()=>{
   voz.pitch = 1;
   speechSynthesis.speak(voz);
 });
-$("activarVoz").addEventListener("click",iniciarEscuchaVoz);
 $("iniciar").addEventListener("click",iniciar);
 $("detener").addEventListener("click",detener);
 window.addEventListener("pagehide",cerrarCamara);
+  window.addEventListener("load", () => {
+    iniciarEscuchaVoz();
+});
 </script>
 </body>
 </html>
