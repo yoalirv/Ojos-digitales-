@@ -1,0 +1,559 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080d18">
+<title>Ojos Digitales</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{--neon:#42ffad;--ink:#050b13}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:#f4fff9;font-family:Inter,"Segoe UI",Arial,sans-serif;min-height:100vh}
+button{font:inherit;cursor:pointer}
+#inicio{position:fixed;inset:0;overflow:auto;display:flex;align-items:center;justify-content:center;padding:26px 18px;background:radial-gradient(ellipse at 50% 18%,rgba(27,151,103,.24),transparent 38%),radial-gradient(ellipse at 100% 90%,rgba(29,87,121,.18),transparent 36%),linear-gradient(145deg,#07131b,#03070d 72%);z-index:5}
+#inicio:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(91,255,185,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(91,255,185,.12) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
+.card{position:relative;width:min(100%,500px);padding:clamp(27px,6vw,46px) clamp(22px,6vw,42px);text-align:center;border:1px solid rgba(108,255,190,.22);border-radius:30px;background:linear-gradient(145deg,rgba(15,35,43,.92),rgba(5,14,23,.96));box-shadow:0 30px 90px rgba(0,0,0,.48),0 0 55px rgba(43,255,166,.09);backdrop-filter:blur(18px)}
+.brandline{display:flex;align-items:center;justify-content:center;gap:9px;color:#a7c9bc;font-size:10px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
+.logo-wrap{width:142px;height:142px;margin:27px auto 25px;position:relative;display:grid;place-items:center;border:1px solid rgba(91,255,180,.35);border-radius:50%;background:radial-gradient(circle,rgba(53,255,169,.14),rgba(53,255,169,.025) 65%);box-shadow:inset 0 0 35px rgba(64,255,174,.08),0 0 48px rgba(64,255,174,.12)}
+.logo-wrap:before,.logo-wrap:after{content:"";position:absolute;border:1px solid rgba(91,255,180,.2);border-radius:50%;inset:-10px}
+.logo-wrap:after{inset:-20px;border-style:dashed;opacity:.55;animation:spin 24s linear infinite}
+.logo{width:88px;height:88px;color:var(--neon);filter:drop-shadow(0 0 15px rgba(66,255,173,.55))}
+@keyframes spin{to{transform:rotate(360deg)}}
+.eyebrow{font-size:10px;letter-spacing:4px;color:var(--neon);font-weight:800;text-transform:uppercase}
+h1{font-size:clamp(35px,9vw,49px);letter-spacing:2px;line-height:1.02;margin:13px 0 14px;font-weight:900}
+h1 span{color:var(--neon)}
+.intro{max-width:370px;margin:0 auto;color:#a9bdb8;font-size:14px;line-height:1.75}
+.intro-lead,.intro-close{display:block;color:#e8fff3;font-weight:800}
+.intro-lead{font-size:16px;margin-bottom:10px}
+.intro-close{font-size:13px;color:var(--neon);margin-top:12px}
+.listen-btn{display:block;width:100%;margin:18px auto 0;padding:12px 14px;border:1px solid rgba(165,255,211,.42);border-radius:12px;background:rgba(165,255,211,.07);color:#caffdf;font-weight:800;font-size:11px;letter-spacing:1px;cursor:pointer}
+.listen-btn:hover,.listen-btn:focus-visible{background:rgba(165,255,211,.15);outline:2px solid var(--neon);outline-offset:3px}
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:27px 0 24px}
+.feature{padding:13px 7px;border:1px solid rgba(150,255,210,.12);border-radius:14px;background:rgba(255,255,255,.025);color:#d9eee5;font-size:11px;line-height:1.45}
+.feature b{display:block;color:var(--neon);font-size:19px;margin-bottom:5px}
+.btn{width:100%;border:0;border-radius:14px;padding:17px 18px;background:linear-gradient(100deg,#a5ffd3,#40f5a3);color:#052116;font-weight:900;letter-spacing:1px;box-shadow:0 10px 30px rgba(54,255,166,.2);transition:transform .2s,filter .2s}
+.btn:hover{transform:translateY(-2px);filter:brightness(1.06)}
+.btn:disabled{opacity:.5;cursor:wait}
+.footnote{margin:17px 0 0!important;color:#708c83!important;font-size:10px!important;letter-spacing:.3px}
+#app{display:none;position:fixed;inset:0;background:#000}
+#video{position:absolute;width:100%;height:100%;object-fit:cover}
+#overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.top{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;padding:14px 16px;background:rgba(8,19,30,.78);border:1px solid rgba(66,255,173,.4);border-radius:15px;display:flex;justify-content:space-between;gap:12px;backdrop-filter:blur(14px)}
+#estado{font-size:12px;color:#b6c4d5;text-align:right}
+.bottom{position:absolute;bottom:max(15px,env(safe-area-inset-bottom));left:12px;right:12px;display:grid;gap:10px}
+#mensaje{background:rgba(5,17,25,.9);border:1px solid var(--neon);border-radius:15px;padding:16px;text-align:center;font-weight:800;min-height:52px;backdrop-filter:blur(12px)}
+#detener{background:#ef5555;color:white;box-shadow:none}
+#ayuda{font-size:11px;text-align:center;color:#d0d7e2;background:#07101dcc;border-radius:9px;padding:8px}
+@media(max-width:380px){.logo-wrap{width:120px;height:120px}.features{gap:6px}.feature{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.logo-wrap:after{animation:none}.btn{transition:none}}
+</style>
+</head>
+<body>
+<section id="inicio">
+  <div class="card">
+    <div class="brandline">APOYO PARA PERSONAS CON DISCAPACIDAD VISUAL</div>
+    <div class="logo-wrap" aria-hidden="true">
+      <svg class="logo" viewBox="0 0 100 100" fill="none">
+        <path d="M7 50S22 24 50 24s43 26 43 26-15 26-43 26S7 50 7 50Z" stroke="currentColor" stroke-width="4.5"/>
+        <circle cx="50" cy="50" r="16" stroke="currentColor" stroke-width="4.5"/>
+        <circle cx="50" cy="50" r="6" fill="currentColor"/>
+        <path d="M50 5v9M50 86v9M5 50h9M86 50h9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="eyebrow">Sistema de visión inteligente</div>
+    <h1>OJOS <span>DIGITALES</span></h1>
+    <p class="intro">
+      <strong class="intro-lead">Cada espacio tiene algo que contar.</strong>
+      Ojos Digitales utiliza inteligencia artificial para reconocer objetos y elementos del entorno, transformándolos en información por voz que acompaña a las personas con discapacidad visual en el descubrimiento del mundo que las rodea.
+      <strong class="intro-close">Porque la tecnología también puede crear oportunidades para vivir con mayor autonomía.</strong>
+    </p>
+    <button class="listen-btn" id="escucharIntro" type="button" aria-label="Escuchar la descripción de Ojos Digitales">
+      <span aria-hidden="true">♫</span> ESCUCHAR DESCRIPCIÓN
+    </button>
+    <div class="features">
+      <div class="feature"><b>◎</b>Objetos y personas</div>
+      <div class="feature"><b>⌂</b>Espacios y superficies</div>
+      <div class="feature"><b>♫</b>Alertas por voz</div>
+    </div>
+    <button class="btn" id="iniciar">INICIAR&nbsp; →</button>
+    <p class="footnote">ACTIVA EL MICRÓFONO O PULSA INICIAR · EXPLORA · ESCUCHA</p>
+  </div>
+</section>
+
+<main id="app">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div class="top"><strong>OJOS DIGITALES</strong><span id="estado">Preparando modelos...</span></div>
+  <div class="bottom">
+    <div id="mensaje" aria-live="polite">Cargando reconocimiento...</div>
+    <div id="ayuda">Este proyecto no sustituye un bastón, perro guía ni acompañamiento.</div>
+    <button class="btn" id="detener">DETENER SISTEMA</button>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const inicio=$("inicio"), app=$("app"), video=$("video"), estado=$("estado"), mensaje=$("mensaje");
+const canvas=$("overlay"), ctx=canvas.getContext("2d");
+
+let stream=null, objetosModelo=null, escenaModelo=null, activo=false, ocupado=false;
+let ultimoAviso="", ultimoHabla=0, ultimoEscena=0, cicloId=null;
+
+// Control por voz: funciona en navegadores compatibles con Web Speech API.
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let reconocimiento=null, vozSolicitada=false, hablandoSistema=false, reconocimientoIniciado=false;
+let temporizadorEscucha=null, workerOCR=null, leyendoOCR=false;
+let ultimoResumen="Todavía no hay una descripción disponible.";
+let ultimoAvisoPeligro=0, ultimoResumenHablado="";
+const UMBRAL_OBJETO=0.55;
+const NOMBRES={
+  person:"persona",bicycle:"bicicleta",car:"auto",motorcycle:"motocicleta",bus:"autobús",
+  truck:"camión",traffic_light:"semáforo",fire_hydrant:"hidrante",stop_sign:"señal de alto",
+  bench:"banca",bird:"pájaro",cat:"gato",dog:"perro",horse:"caballo",sheep:"oveja",
+  cow:"vaca",elephant:"elefante",bear:"oso",zebra:"cebra",giraffe:"jirafa",backpack:"mochila",
+  umbrella:"paraguas",handbag:"bolsa",tie:"corbata",suitcase:"maleta", frisbee:"disco",
+  skis:"esquís",snowboard:"tabla de snowboard",sports_ball:"pelota",kite:"cometa",
+  baseball_bat:"bate",baseball_glove:"guante de béisbol",skateboard:"patineta",
+  surfboard:"tabla de surf",tennis_racket:"raqueta",bottle:"botella",wine_glass:"copa",
+  cup:"taza",fork:"tenedor",knife:"cuchillo",spoon:"cuchara",bowl:"tazón",
+  banana:"plátano",apple:"manzana",sandwich:"sándwich",orange:"naranja",broccoli:"brócoli",
+  carrot:"zanahoria",hot_dog:"hot dog",pizza:"pizza",donut:"dona",cake:"pastel",
+  chair:"silla",couch:"sofá",potted_plant:"maceta",bed:"cama",dining_table:"mesa",
+  toilet:"inodoro",tv:"televisión",laptop:"Laptop",mouse:"ratón",
+  remote:"control remoto",keyboard:"teclado",cell_phone:"celular",microwave:"microondas",
+  oven:"horno",toaster:"tostadora",sink:"lavabo",refrigerator:"refrigerador",
+  book:"libro",clock:"reloj",vase:"florero",scissors:"tijeras",teddy_bear:"oso de peluche",
+  hair_drier:"secadora",toothbrush:"cepillo de dientes"
+};
+function actualizarEstadoVoz(texto){
+  const elemento=$("estadoVoz");
+  if(elemento) elemento.textContent=texto;
+  if(estado) estado.textContent=texto;
+}
+
+function hablar(texto, forzar=false){
+  if(!("speechSynthesis" in window)) return;
+  const now=Date.now();
+  if(!forzar && texto===ultimoAviso && now-ultimoHabla<4500) return;
+
+  hablandoSistema=true;
+  if(reconocimiento && reconocimientoIniciado){
+    try{reconocimiento.stop();}catch(e){}
+  }
+
+  window.speechSynthesis.cancel();
+  const voz=new SpeechSynthesisUtterance(texto);
+  voz.lang="es-MX";
+  voz.rate=0.96;
+  voz.pitch=1;
+  voz.onend=()=>{
+    hablandoSistema=false;
+    if(vozSolicitada) programarReinicioEscucha();
+  };
+  voz.onerror=()=>{
+    hablandoSistema=false;
+    if(vozSolicitada) programarReinicioEscucha();
+  };
+  window.speechSynthesis.speak(voz);
+  ultimoAviso=texto;
+  ultimoHabla=now;
+}
+
+function normalizarComando(texto){
+  return texto.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[¿?¡!.,;:]/g,"").trim();
+}
+
+function programarReinicioEscucha(){
+  clearTimeout(temporizadorEscucha);
+  temporizadorEscucha=setTimeout(()=>{
+    if(vozSolicitada && !hablandoSistema) iniciarReconocimiento();
+  },650);
+}
+
+function iniciarReconocimiento(){
+  if(!vozSolicitada || !reconocimiento || hablandoSistema || reconocimientoIniciado) return;
+  try{
+    reconocimiento.start();
+  }catch(error){
+    console.warn("No se pudo iniciar el reconocimiento:",error);
+    // Si ya estaba arrancando, onstart/onend actualizarán el estado.
+  }
+}
+
+async function iniciarEscuchaVoz(){
+  const SpeechAPI=window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechAPI){
+    actualizarEstadoVoz("Tu navegador no admite reconocimiento de voz. Prueba Chrome o Edge.");
+    hablar("Este navegador no admite reconocimiento de voz. Abre Ojos Digitales en Google Chrome o Microsoft Edge actualizado.",true);
+    return;
+  }
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    actualizarEstadoVoz("El micrófono requiere HTTPS.");
+    hablar("El micrófono requiere una conexión segura HTTPS. Abre la página publicada en GitHub Pages.",true);
+    return;
+  }
+
+  try{
+    actualizarEstadoVoz("Solicitando permiso del micrófono...");
+    // Solicita permiso explícito primero para que el usuario vea el diálogo del navegador.
+    const pruebaMic=await navigator.mediaDevices.getUserMedia({audio:true});
+    pruebaMic.getTracks().forEach(pista=>pista.stop());
+
+    if(!reconocimiento){
+      reconocimiento=new SpeechAPI();
+      reconocimiento.lang="es-MX";
+      reconocimiento.continuous=true;
+      reconocimiento.interimResults=false;
+      reconocimiento.maxAlternatives=1;
+
+      reconocimiento.onstart=()=>{
+        reconocimientoIniciado=true;
+        actualizarEstadoVoz("Micrófono activo. Te estoy escuchando.");
+      };
+
+      reconocimiento.onresult=(evento)=>{
+        const resultado=evento.results[evento.results.length-1];
+        if(!resultado || !resultado.isFinal) return;
+        const frase=resultado[0].transcript;
+        const comando=normalizarComando(frase);
+        console.log("Voz detectada:",frase,"| comando:",comando);
+        if(comando) procesarComandoVoz(comando);
+      };
+
+      reconocimiento.onerror=(evento)=>{
+        console.error("Error de reconocimiento:",evento.error);
+        reconocimientoIniciado=false;
+        const mensajes={
+          "not-allowed":"Permiso de micrófono bloqueado. Actívalo en los permisos del sitio.",
+          "service-not-allowed":"El servicio de reconocimiento de voz no está permitido.",
+          "audio-capture":"No se encontró un micrófono disponible.",
+          "no-speech":"No se detectó voz. Acércate al micrófono y vuelve a hablar.",
+          "network":"Error de red al reconocer la voz. Revisa tu conexión.",
+          "aborted":"La escucha se detuvo."
+        };
+        const detalle=mensajes[evento.error] || ("Error de micrófono: "+evento.error);
+        actualizarEstadoVoz(detalle);
+        if(evento.error==="not-allowed" || evento.error==="service-not-allowed"){
+          vozSolicitada=false;
+        }else if(vozSolicitada && !hablandoSistema){
+          programarReinicioEscucha();
+        }
+      };
+
+      reconocimiento.onend=()=>{
+        reconocimientoIniciado=false;
+        if(vozSolicitada && !hablandoSistema) programarReinicioEscucha();
+      };
+    }
+
+    vozSolicitada=true;
+    $("activarVoz").textContent="CONTROL POR VOZ ACTIVADO";
+    actualizarEstadoVoz("Permiso concedido. Activando instrucciones por voz...");
+    // Primero anuncia la activación y después abre el micrófono para no escucharse a sí mismo.
+    hablar("Control por voz activado. Di iniciar sistema o ayuda.",true);
+  }catch(error){
+    console.error(error);
+    vozSolicitada=false;
+    const texto=error.name==="NotAllowedError"
+      ? "No se concedió permiso al micrófono. Revisa los permisos del sitio."
+      : "No se pudo acceder al micrófono. Comprueba que esté conectado y habilitado.";
+    actualizarEstadoVoz(texto);
+    hablar(texto,true);
+  }
+}
+
+function procesarComandoVoz(comando){
+  console.log("Comando de voz:",comando);
+
+  if(comando.includes("ayuda") || comando.includes("comandos") || comando.includes("que puedo decir")){
+    hablar("Puedes decir: iniciar sistema, qué tengo enfrente, describe mi entorno, leer texto, repetir, silencio o detener sistema.",true);
+    return;
+  }
+
+  if(comando.includes("iniciar sistema") || comando==="comenzar" || comando==="iniciar"){
+    if(!activo) iniciar();
+    else hablar("El sistema ya está activo.",true);
+    return;
+  }
+
+  if(comando.includes("detener sistema") || comando==="detener" || comando==="apagar sistema"){
+    detener();
+    return;
+  }
+
+  if(comando.includes("leer texto") || comando.includes("lee el texto") || comando.includes("leer lo que dice") || comando.includes("leer letrero")){
+    leerTextoEnCamara();
+    return;
+  }
+
+  if(comando.includes("repetir")){
+    hablar(ultimoResumen,true);
+    return;
+  }
+
+  if(comando.includes("que tengo enfrente") || comando.includes("que hay enfrente") ||
+     comando.includes("describe mi entorno") || comando.includes("describe el entorno") ||
+     comando.includes("que hay a mi alrededor")){
+    hablar(ultimoResumen,true);
+    return;
+  }
+
+  if(comando==="silencio" || comando==="callar"){
+    window.speechSynthesis.cancel();
+    hablandoSistema=false;
+    if(vozSolicitada) programarReinicioEscucha();
+    return;
+  }
+
+  hablar("No reconocí esa instrucción. Di ayuda para escuchar los comandos disponibles.",true);
+}
+
+async function leerTextoEnCamara(){
+  if(!activo || video.readyState<2){
+    hablar("Primero di iniciar sistema para encender la cámara.",true);
+    return;
+  }
+  if(leyendoOCR) return;
+  leyendoOCR=true;
+  try{
+    if(!window.Tesseract) throw new Error("No se cargó el lector de texto.");
+    mensaje.textContent="Leyendo texto de la imagen...";
+    estado.textContent="Reconocimiento de texto OCR";
+    if(!workerOCR){
+      hablar("Preparando el lector de textos. Espera un momento.",true);
+      workerOCR=await Tesseract.createWorker("spa");
+    }
+    const captura=document.createElement("canvas");
+    captura.width=video.videoWidth;
+    captura.height=video.videoHeight;
+    captura.getContext("2d").drawImage(video,0,0,captura.width,captura.height);
+    const resultado=await workerOCR.recognize(captura);
+    const texto=(resultado.data.text||"").replace(/\s+/g," ").trim();
+    if(texto){
+      ultimoResumen="El texto que puedo leer dice: "+texto;
+      mensaje.textContent=ultimoResumen;
+      hablar(ultimoResumen,true);
+    }else{
+      ultimoResumen="No pude identificar texto en la imagen. Intenta acercar la cámara y mejorar la iluminación.";
+      hablar(ultimoResumen,true);
+    }
+  }catch(error){
+    console.error("Error OCR:",error);
+    hablar("No pude leer el texto. Revisa tu conexión e intenta de nuevo con el texto más cerca y bien iluminado.",true);
+  }finally{
+    leyendoOCR=false;
+    if(activo) estado.textContent="Sistema activo";
+  }
+}
+
+async function abrirCamara(){
+  if(!navigator.mediaDevices?.getUserMedia) throw new Error("La cámara requiere HTTPS y un navegador compatible.");
+  stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:960},height:{ideal:540}}});
+  video.srcObject=stream;
+  await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});
+  await video.play();
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+}
+function cerrarCamara(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;}
+async function cargarModelos(){
+  if(!window.tf || !window.cocoSsd || !window.deeplab) throw new Error("No se pudieron cargar las bibliotecas de IA. Revisa tu conexión.");
+  await tf.ready();
+  estado.textContent="Cargando detector de objetos...";
+  objetosModelo=await cocoSsd.load({base:"lite_mobilenet_v2"});
+  estado.textContent="Cargando detector de paredes y pisos...";
+  escenaModelo=await deeplab.load({base:"ade20k",quantizationBytes:2});
+}
+function traducirClase(s){return NOMBRES[s]||s.replaceAll("_"," ");}
+function dibujarObjetos(predicciones){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.lineWidth=Math.max(2,canvas.width/400);
+  ctx.font=`bold ${Math.max(15,canvas.width/55)}px Arial`;
+  for(const p of predicciones){
+    if(p.score<UMBRAL_OBJETO) continue;
+    const [x,y,w,h]=p.bbox;
+    ctx.strokeStyle="#00ff78";ctx.fillStyle="#00ff78";ctx.strokeRect(x,y,w,h);
+    const etiqueta=`${traducirClase(p.class)} ${Math.round(p.score*100)}%`;
+    const tw=ctx.measureText(etiqueta).width+12;
+    ctx.fillRect(x,Math.max(0,y-27),tw,25);ctx.fillStyle="#00150a";
+    ctx.fillText(etiqueta,x+6,Math.max(18,y-9));ctx.fillStyle="#00ff78";
+  }
+}
+function analizarPosiciones(predicciones){
+  const ancho=canvas.width, alto=canvas.height;
+  const validos=predicciones.filter(p=>p.score>=UMBRAL_OBJETO);
+  const elementos=validos.map(p=>{
+    const [x,y,w,h]=p.bbox;
+    const centro=x+w/2;
+    const zona=centro<ancho/3 ? "izquierda" : centro>ancho*2/3 ? "derecha" : "centro";
+    const proporcion=(w*h)/(ancho*alto);
+    return {
+      nombre:traducirClase(p.class),
+      zona,
+      proporcion,
+      confianza:p.score
+    };
+  });
+
+  const porZona={izquierda:[],centro:[],derecha:[]};
+  elementos.forEach(obj=>porZona[obj.zona].push(obj));
+  return {elementos,porZona};
+}
+
+function construirDescripcion(posiciones){
+  const partes=[];
+  for(const zona of ["izquierda","centro","derecha"]){
+    const lista=posiciones.porZona[zona];
+    if(lista.length){
+      const nombres=[...new Set(lista.slice(0,2).map(x=>x.nombre))];
+      partes.push(`${zona}: ${nombres.join(" y ")}`);
+    }
+  }
+  if(!partes.length) return "No identifico objetos conocidos en este momento.";
+  return "Detecto "+partes.join(". Además, ");
+}
+
+function detectarAlertaPrioritaria(posiciones){
+  // El tamaño aparente del objeto NO es una medición de distancia.
+  // Solo se usa como indicio visual aproximado para priorizar un aviso.
+  const candidato=posiciones.elementos
+    .filter(x=>x.proporcion>0.16)
+    .sort((a,b)=>b.proporcion-a.proporcion)[0];
+
+  if(!candidato) return null;
+  return `Precaución. Hay un objeto grande en la zona ${candidato.zona}: ${candidato.nombre}. No puedo medir su distancia exacta.`;
+}
+
+async function detectarEscena(){
+  const mapa=await escenaModelo.predict(video);
+  const datos=await mapa.data();
+  const shape=mapa.shape;mapa.dispose();
+  const alto=shape[0], ancho=shape[1];
+  const etiquetas=deeplab.getLabels("ade20k");
+  const conteo={};
+  const y0=Math.floor(alto*.25), y1=Math.floor(alto*.90);
+  const x0=Math.floor(ancho*.25), x1=Math.floor(ancho*.75);
+  for(let y=y0;y<y1;y+=2){
+    for(let x=x0;x<x1;x+=2){
+      const id=datos[y*ancho+x];
+      const nombre=etiquetas[id];
+      if(nombre)conteo[nombre]=(conteo[nombre]||0)+1;
+    }
+  }
+  const total=Object.values(conteo).reduce((a,b)=>a+b,0)||1;
+  return Object.entries(conteo).sort((a,b)=>b[1]-a[1]).map(([nombre,n])=>({nombre,porcentaje:n/total}));
+}
+function fraseEscena(lista){
+  const importantes=lista.filter(x=>x.porcentaje>.08);
+  const nombres=importantes.map(x=>x.nombre);
+  const salida=[];
+  if(nombres.includes("wall"))salida.push("pared");
+  if(nombres.includes("floor"))salida.push("piso");
+  if(nombres.includes("door"))salida.push("puerta");
+  if(nombres.includes("ceiling"))salida.push("techo");
+  if(nombres.includes("windowpane"))salida.push("ventana");
+  return salida;
+}
+async function analizar(){
+  if(!activo||ocupado)return;
+  ocupado=true;
+  try{
+    const preds=await objetosModelo.detect(video,10,UMBRAL_OBJETO);
+    dibujarObjetos(preds);
+    const posiciones=analizarPosiciones(preds);
+    const descripcion=construirDescripcion(posiciones);
+    ultimoResumen=descripcion;
+
+    const alerta=detectarAlertaPrioritaria(posiciones);
+    if(alerta && Date.now()-ultimoAvisoPeligro>6500){
+      ultimoAvisoPeligro=Date.now();
+      mensaje.textContent=alerta;
+      hablar(alerta,true);
+    }else if(posiciones.elementos.length){
+      mensaje.textContent=descripcion;
+      estado.textContent=vozSolicitada ? "Sistema activo · control por voz" : "Entorno analizado";
+      // Evita repetir continuamente la misma frase.
+      if(descripcion!==ultimoResumenHablado){
+        ultimoResumenHablado=descripcion;
+        hablar(descripcion);
+      }
+    }else{
+      mensaje.textContent="Analizando el entorno...";
+      estado.textContent=vozSolicitada ? "Sistema activo · control por voz" : "Buscando objetos";
+    }
+
+    if(Date.now()-ultimoEscena>5000){
+      ultimoEscena=Date.now();
+      const escena=await detectarEscena();
+      const elementos=fraseEscena(escena);
+      if(elementos.length){
+        const frase="También identifico "+elementos.join(", ")+".";
+        ultimoResumen += " "+frase;
+      }
+    }
+  }catch(e){
+    console.error(e);
+    estado.textContent="Error en el análisis";
+    mensaje.textContent="No se pudo analizar esta imagen.";
+  }finally{
+    ocupado=false;
+    if(activo)cicloId=setTimeout(analizar,500);
+  }
+}
+async function iniciar(){
+  $("iniciar").disabled=true;$("iniciar").textContent="INICIANDO...";
+  try{
+    inicio.style.display="none";app.style.display="block";
+    await abrirCamara();await cargarModelos();
+    activo=true;estado.textContent="Sistema activo";
+    mensaje.textContent="Reconocimiento iniciado";
+    hablar("Ojos Digitales está listo. Puedes preguntar qué tengo enfrente o decir leer texto.",true);
+    analizar();
+  }catch(e){
+    console.error(e);cerrarCamara();app.style.display="none";inicio.style.display="flex";
+    $("iniciar").disabled=false;$("iniciar").textContent="INTENTAR DE NUEVO";
+    alert(e.message||"No se pudo iniciar el sistema.");
+  }
+}
+function detener(){
+  activo=false;
+  vozSolicitada=false;
+  hablandoSistema=false;
+  clearTimeout(temporizadorEscucha);
+  if(reconocimiento){try{reconocimiento.stop();}catch(e){}}
+  reconocimientoIniciado=false;
+  if(cicloId)clearTimeout(cicloId);
+  cerrarCamara();
+  if("speechSynthesis"in window)speechSynthesis.cancel();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  app.style.display="none";inicio.style.display="flex";
+  $("iniciar").disabled=false;$("iniciar").textContent="INICIAR EXPERIENCIA";
+}
+$("escucharIntro").addEventListener("click",()=>{
+  const descripcion = "Cada espacio tiene algo que contar. Ojos Digitales utiliza inteligencia artificial para reconocer objetos y elementos del entorno, transformándolos en información por voz que acompaña a las personas con discapacidad visual en el descubrimiento del mundo que las rodea. Porque la tecnología también puede crear oportunidades para vivir con mayor autonomía.";
+  if(!("speechSynthesis" in window)){
+    alert("Tu navegador no admite la lectura por voz. Prueba con Chrome o Edge actualizado.");
+    return;
+  }
+  speechSynthesis.cancel();
+  const voz = new SpeechSynthesisUtterance(descripcion);
+  voz.lang = "es-MX";
+  voz.rate = 0.92;
+  voz.pitch = 1;
+  speechSynthesis.speak(voz);
+});
+$("activarVoz").addEventListener("click",iniciarEscuchaVoz);
+$("iniciar").addEventListener("click",iniciar);
+$("detener").addEventListener("click",detener);
+window.addEventListener("pagehide",cerrarCamara);
+</script>
+</body>
+</html>
