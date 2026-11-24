@@ -111,7 +111,6 @@ let reconocimiento=null, vozSolicitada=false, hablandoSistema=false, reconocimie
 let temporizadorEscucha=null, workerOCR=null, leyendoOCR=false;
 let ultimoResumen="Todavía no hay una descripción disponible.";
 let ultimoAvisoPeligro=0, ultimoResumenHablado="";
-let ultimaUbicacionPared="", ultimoAvisoPared=0;
 const UMBRAL_OBJETO=0.55;
 const NOMBRES={
   person:"persona",bicycle:"bicicleta",car:"auto",motorcycle:"motocicleta",bus:"autobús",
@@ -370,7 +369,7 @@ async function cargarModelos(){
   await tf.ready();
   estado.textContent="Cargando detector de objetos...";
   objetosModelo=await cocoSsd.load({base:"lite_mobilenet_v2"});
-  estado.textContent="Cargando detector de paredes...";
+  estado.textContent="Cargando detector de paredes y pisos...";
   escenaModelo=await deeplab.load({base:"ade20k",quantizationBytes:2});
 }
 function traducirClase(s){return NOMBRES[s]||s.replaceAll("_"," ");}
@@ -434,52 +433,34 @@ function detectarAlertaPrioritaria(posiciones){
 }
 
 async function detectarEscena(){
-  // DeepLab identifica superficies en la imagen. Dividimos la imagen en
-  // tres zonas para estimar si la pared aparece a la izquierda, enfrente o a la derecha.
   const mapa=await escenaModelo.predict(video);
-  try{
-    const datos=await mapa.data();
-    const shape=mapa.shape;
-    const alto=shape[0], ancho=shape[1];
-    const etiquetas=deeplab.getLabels("ade20k");
-    const zonas=[
-      {nombre:"izquierda",x0:0,x1:Math.floor(ancho/3)},
-      {nombre:"centro",x0:Math.floor(ancho/3),x1:Math.floor(ancho*2/3)},
-      {nombre:"derecha",x0:Math.floor(ancho*2/3),x1:ancho}
-    ];
-    const encontradas=[];
-    const y0=Math.floor(alto*.12), y1=Math.floor(alto*.90);
-
-    for(const zona of zonas){
-      let pared=0, muestras=0;
-      for(let y=y0;y<y1;y+=2){
-        for(let x=zona.x0;x<zona.x1;x+=2){
-          const id=datos[y*ancho+x];
-          const nombre=etiquetas[id];
-          if(nombre==="wall") pared++;
-          muestras++;
-        }
-      }
-      const proporcion=pared/(muestras||1);
-      // Se requiere que la pared ocupe al menos 20% de esa zona.
-      if(proporcion>=0.20) encontradas.push(zona.nombre);
+  const datos=await mapa.data();
+  const shape=mapa.shape;mapa.dispose();
+  const alto=shape[0], ancho=shape[1];
+  const etiquetas=deeplab.getLabels("ade20k");
+  const conteo={};
+  const y0=Math.floor(alto*.25), y1=Math.floor(alto*.90);
+  const x0=Math.floor(ancho*.25), x1=Math.floor(ancho*.75);
+  for(let y=y0;y<y1;y+=2){
+    for(let x=x0;x<x1;x+=2){
+      const id=datos[y*ancho+x];
+      const nombre=etiquetas[id];
+      if(nombre)conteo[nombre]=(conteo[nombre]||0)+1;
     }
-    return encontradas;
-  }finally{
-    mapa.dispose();
   }
+  const total=Object.values(conteo).reduce((a,b)=>a+b,0)||1;
+  return Object.entries(conteo).sort((a,b)=>b[1]-a[1]).map(([nombre,n])=>({nombre,porcentaje:n/total}));
 }
-
-function fraseEscena(zonas){
-  if(!zonas.length) return "";
-  const lugares=zonas.map(zona=>{
-    if(zona==="izquierda") return "a la izquierda";
-    if(zona==="centro") return "enfrente";
-    if(zona==="derecha") return "a la derecha";
-    return "";
-  }).filter(Boolean);
-  if(!lugares.length) return "";
-  return "Identifico una pared "+lugares.join(" y ")+".";
+function fraseEscena(lista){
+  const importantes=lista.filter(x=>x.porcentaje>.08);
+  const nombres=importantes.map(x=>x.nombre);
+  const salida=[];
+  if(nombres.includes("wall"))salida.push("pared");
+  if(nombres.includes("floor"))salida.push("piso");
+  if(nombres.includes("door"))salida.push("puerta");
+  if(nombres.includes("ceiling"))salida.push("techo");
+  if(nombres.includes("windowpane"))salida.push("ventana");
+  return salida;
 }
 async function analizar(){
   if(!activo||ocupado)return;
@@ -511,23 +492,11 @@ async function analizar(){
 
     if(Date.now()-ultimoEscena>5000){
       ultimoEscena=Date.now();
-      const zonasPared=await detectarEscena();
-      const frasePared=fraseEscena(zonasPared);
-
-      if(frasePared){
-        // Añade la ubicación estimada al resumen que responde a "repetir".
-        ultimoResumen=descripcion+" "+frasePared;
-
-        // Evita anunciar la misma pared en cada análisis.
-        if(frasePared!==ultimaUbicacionPared && Date.now()-ultimoAvisoPared>10000){
-          ultimaUbicacionPared=frasePared;
-          ultimoAvisoPared=Date.now();
-          mensaje.textContent=frasePared;
-          hablar(frasePared,true);
-        }
-      }else{
-        ultimaUbicacionPared="";
-        ultimoResumen=descripcion;
+      const escena=await detectarEscena();
+      const elementos=fraseEscena(escena);
+      if(elementos.length){
+        const frase="También identifico "+elementos.join(", ")+".";
+        ultimoResumen += " "+frase;
       }
     }
   }catch(e){
